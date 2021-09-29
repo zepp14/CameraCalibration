@@ -76,6 +76,11 @@ class FrameViewer(Gtk.Window):
         self.init_ui()
         self._start = None
         self.set_default_size(374, 294)
+        #at state zero 0 the frame is white, sets to black when observation is made
+        self.state_flag = 0
+        self.startTime = 0
+        self.readTime = 0
+        self.deltaT = 0
 
     def init_ui(self):
         self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA(0, 0, 0, 1))
@@ -90,9 +95,8 @@ class FrameViewer(Gtk.Window):
         self._thread = ImgThread(self._showframe)
         self._thread.start()
 
-    def _customFunc(self):
-        time.sleep(1)
-        print("Hello")
+
+
 
 
     def _update_image(self, pix):
@@ -109,9 +113,32 @@ class FrameViewer(Gtk.Window):
 
         color_img = cv2.merge((Ch1,Ch2,Ch3))
         gray_img =  Ch1
-        
+        meanVal = np.mean(Ch1)
+        if(meanVal > 40):
+            #self.readTime = time.time()
+            self.state_flag = 1
+        elif(meanVal < 40):
+            pass
+            self.state_flag = 0
+        #print(meanVal )
         cv2.imshow('frame', gray_img)
 
+    def _stateFlipFlop(self):
+        img_white = 100*np.ones((1000,1000))
+        img_black = 0*np.ones((1000,1000))
+
+        if(self.state_flag == 0):
+            cv2.imshow('frameI', img_white)
+            self.startTime = time.time()
+        elif(self.state_flag == 1):
+            self.readTime = time.time()
+            
+            #self.state_flag = 0
+            cv2.imshow('frameI', img_black)
+            time.sleep(0.5)
+            print(self.readTime -self.startTime )
+        else:
+            pass
 
         
 
@@ -133,7 +160,7 @@ class FrameViewer(Gtk.Window):
             
             
             GLib.idle_add(self._update_image, pix)
-            GLib.idle_add(self._customFunc)
+            GLib.idle_add(self._stateFlipFlop)
         except gi.repository.GLib.Error:
             print("Could not set image!")
 
