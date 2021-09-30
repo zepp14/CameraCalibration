@@ -6,9 +6,10 @@ import threading
 import time
 import socket,os,struct
 import cv2
+from scipy.stats import norm
 #commited to Git
 
-
+import matplotlib.pyplot as plt
 import numpy as np
 deck_ip = None
 deck_port = None
@@ -80,7 +81,9 @@ class FrameViewer(Gtk.Window):
         self.state_flag = 0
         self.startTime = 0
         self.readTime = 0
-        self.deltaT = 0
+        self.deltaT = []
+        self.num_samples = 0
+        self.MAX_samp = 200
 
     def init_ui(self):
         self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA(0, 0, 0, 1))
@@ -114,11 +117,12 @@ class FrameViewer(Gtk.Window):
         color_img = cv2.merge((Ch1,Ch2,Ch3))
         gray_img =  Ch1
         meanVal = np.mean(Ch1)
-        if(meanVal > 40):
-            #self.readTime = time.time()
+        if(meanVal > 40 and self.state_flag == 0):
+            self.readTime = time.time()
             self.state_flag = 1
-        elif(meanVal < 40):
-            pass
+
+        elif(meanVal < 40 and self.state_flag == 1):
+            
             self.state_flag = 0
         #print(meanVal )
         cv2.imshow('frame', gray_img)
@@ -126,20 +130,26 @@ class FrameViewer(Gtk.Window):
     def _stateFlipFlop(self):
         img_white = 100*np.ones((1000,1000))
         img_black = 0*np.ones((1000,1000))
+        if self.num_samples <= self.MAX_samp:
+            if(self.state_flag == 0):
+                cv2.imshow('frameI', img_white)
+                self.startTime = time.time()
+            elif(self.state_flag == 1):
+                
+                
+                #self.state_flag = 0
+                cv2.imshow('frameI', img_black)
+                self.num_samples += 1 
+                self.deltaT.append(self.readTime -self.startTime)
+                print(self.num_samples,': ',self.readTime -self.startTime )
+                
 
-        if(self.state_flag == 0):
-            cv2.imshow('frameI', img_white)
-            self.startTime = time.time()
-        elif(self.state_flag == 1):
-            self.readTime = time.time()
-            
-            #self.state_flag = 0
-            cv2.imshow('frameI', img_black)
-            time.sleep(0.5)
-            print(self.readTime -self.startTime )
+            else:
+                pass
         else:
-            pass
+            Gtk.main_quit()
 
+            
         
 
     def _showframe(self, imgdata):
@@ -179,5 +189,28 @@ fw = FrameViewer()
 fw.show_all()
 try:
     Gtk.main()
+    
+    fig, ax = plt.subplots()
+    
+
+    #ax.plot(fw.deltaT)
+    data = fw.deltaT
+    mu, std = norm.fit(data)
+    print('mean: ', mu, ', std: ', std)
+    # Plot the histogram.
+    ax.hist(data, bins=25, density=True, alpha=0.6, color='g')
+
+    # Plot the PDF.
+    xmin, xmax = plt.xlim()
+    x = np.linspace(xmin, xmax, 100)
+    p = norm.pdf(x, mu, std)
+    ax.plot(x, p, 'k', linewidth=2)
+    title = "Fit results: mu = %.2f,  std = %.2f" % (mu, std)
+    #ax.set_title(title)
+
+    plt.show()
+
+
+
 except KeyboardInterrupt:
     Gtk.main_quit()
