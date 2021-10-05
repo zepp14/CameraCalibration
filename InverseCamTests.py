@@ -8,11 +8,15 @@ from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 from sklearn.preprocessing import normalize
+from astropy.coordinates import cartesian_to_spherical, spherical_to_cartesian
+from scipy.stats import chi2,norm
+
 fig = plt.figure()
 ax = plt.axes(projection='3d')
 
 fg, ax2 = plt.subplots()
-
+fg3, ax3 = plt.subplots(1,3)
+fg4, ax4 = plt.subplots(4,1)
 
 def MarkerDetection(Img):
 
@@ -40,8 +44,8 @@ def RadialDistoModel(P_p, K):
     x_p_c, y_p_c = 0., 0.
 
     r = np.sqrt(x_p**2 + y_p**2)
-    x_p_c = x_p / (1. + K1*r**2 + K2*r**4 + K3*r**6)
-    y_p_c = y_p / (1. + K1*r**2 + K2*r**4 + K3*r**6)
+    x_p_c = x_p / (1. + (K1*r**2 + K2*r**4 + K3*r**6)/1e11)
+    y_p_c = y_p / (1. + (K1*r**2 + K2*r**4 + K3*r**6)/1e11)
 
     return x_p_c, y_p_c
 
@@ -140,7 +144,11 @@ def GradCostFunction(P_w, P_p, param, h=1e-6):
 
     return(gradient)
 
-
+def reject_outliers(data, m = 2.):
+    d = np.abs(data - np.median(data))
+    mdev = np.median(d)
+    s = d/mdev if mdev else 0.
+    return data[s<m]
 
 
 DataDict = pickle.load( lzma.open( "dataTestSetWorking2.xz", "rb" ) )
@@ -150,6 +158,7 @@ Images = DataDict[ 'ImageData' ]
 shapeIm =  np.shape(Images)
 markerMotion = DataDict[ 'MarkerPosition' ] 
 droneMotion = DataDict[ 'Position' ]
+TimeVect = DataDict[ 'Time_Vector' ]
 
 #compute Camera Vect
 droneQ =  DataDict[ 'Attitude' ] 
@@ -170,10 +179,10 @@ for i in range(0,shapeIm[2]):
     CameraVector[i,:] = temp.transpose()
 ##a = np.matrix([1,0,0]).transpose()
 start = 200
-start = 211
-end = shapeIm[2]-160
-end = 600
-DCM = np.mean(droneDCM, axis=2 )
+#start = 211
+end = shapeIm[2]-220
+#end = 600
+DCM = np.mean(droneDCM[:,:,start:end], axis=2 )
 ViewVector = np.zeros((shapeIm[2],3))
 for i in range(0,shapeIm[2]):
     #temp = droneDCM[:,:,i].transpose() @ (np.asmatrix(markerMotion[i,:] - droneMotion[i,:])).transpose() + np.asmatrix(droneMotion[i,:]).transpose() 
@@ -194,7 +203,7 @@ for i in range(0,shapeIm[2]):
 
 ax.plot3D(markerMotion[start:end,0],markerMotion[start:end,1],markerMotion[start:end,2])
 ax.plot3D(droneMotion[start:end,0],droneMotion[start:end,1],droneMotion[start:end,2])
-ax.plot3D(ViewVector [start:end,0],ViewVector[start:end,1],ViewVector[start:end,2])
+#ax.plot3D(ViewVector[start:end,0], ViewVector[start:end,1],ViewVector[start:end,2])
 
 
 # #print(markerMotion)
@@ -211,92 +220,108 @@ for i in range(0,shapeIm[2]):
     #print(MaxLoc)
 print(np.shape(DotLocation))
 DotLocation = np.array(DotLocation)
-DotLocation[:,1]+40
+
 
 #attempt Transform with guess fx,fy
-P_p = []
-P_w = []
-fx = 160
-fy = 160
-cx = 324/2
-cy = 244/2
-#cx = 0
-#cy = 0
-K1 = 0
-K2 = 0
-K3 =0
-K = [K1, K2, K3]
-# for i in range(0,shapeIm[2]):
-#     a = CamMatrixFunc(ViewVector[i,:] , fx, fy, cx, cy).transpose()
-#     a = InvRadialDistoModel([a[0,0],a[0,1]], K)
-#     b = invCamMatrixFunc(DotLocation[i,:] , fx, fy, cx, cy)
-#     mtx = np.matrix([[0., 0., 1],[0., 1, 0],[-1.0, 0., 0]])
-#     mtx2 = np.matrix([[1, 0, 0],[0., -1, 0],[0, 0., 1]])
-#     b = mtx2 @ mtx @ b
-#     b = b.transpose()
-#     print(np.shape(a))
-#     P_p.append([a[0],a[1]])
-#     P_w.append([b[0,0],b[0,1], b[0,2]])
+
 
 
 ang1 = 0
 ang2 = 0
 PW = markerMotion- droneMotion
-J,P_pix0 = CostFunction(PW[start:end,:], DotLocation[start:end,:], [fx, fy, K1, K2, K3, ang1, ang2])
-
-ang1 = 1
-ang2 = 1
-PW = markerMotion- droneMotion
-J,P_pix2 = CostFunction(PW[start:end,:], DotLocation[start:end,:], [fx, fy, K1, K2, K3, ang1, ang2])
-
-print('CostOut: ', J)
-G = GradCostFunction(PW[start:end,:], DotLocation[start:end,:], [fx, fy, K1, K2, K3, ang1, ang2], h=1e-6)
-print('Grad: ', G/np.linalg.norm(G))
-
-params = [fx, fy, K1, K2, K3, ang1, ang2]
-lr = 10
-lr_ARR = [1e3, 1e2, 1e1, 1e0, 1e-1, 1e-2]
-for i in range(0, 150):
-    G = GradCostFunction(PW[start:end,:], DotLocation[start:end,:], params , h=1e-6)
-    Ja = []
-    for l in lr_ARR:
-        params0  = np.array(params) - l * np.array(G/np.linalg.norm(G))
-        J,P_pix1 = CostFunction(PW[start:end,:], DotLocation[start:end,:], params0)
-        Ja.append(J)
-    Id = np.argmin(Ja)
-    lr = lr_ARR[Id]    
-    params  = np.array(params) - lr * np.array(G/np.linalg.norm(G))
-    J,P_pix1 = CostFunction(PW[start:end,:], DotLocation[start:end,:], params)
-    print(J)
-
-print('Opto: ', params)
-
-fx = 1.61846647e+02
-fy = 1.59018147e+02 
+params =  [1.63398284e+02, 1.65892853e+02, 1.10086469e-03, 3.73184715e-03, 1.18046238e-01, 4.79938573e+00, 1.65922751e+01]
+fx = params[0]
+fy = params[1]
 cx = 324/2
 cy = 244/2
 #cx = 0
 #cy = 0
-K1 = 0
-K2 = 0
-K3 = 0
+K1 = params[2]
+K2 = params[3]
+K3 = params[4]
 K = [K1, K2, K3]
-ang1 = 0
-ang2 = 0
+ang1 = params[5]
+ang2 = params[6]
+ang1_set = ang1
+ang2_set = ang2
 PW = markerMotion- droneMotion
 J,P_pix2 = CostFunction(PW[start:end,:], DotLocation[start:end,:], [fx, fy, K1, K2, K3, ang1, ang2])
 
 
 
+#ProjectedPoints = [invCamMatrixFunc(x, fx, fy, cx, cy) for x in DotLocation]
+ProjectedPoints = [invCamMatrixFunc(RadialDistoModel(x, K), fx, fy, cx, cy) for x in DotLocation]
+PP = np.asarray(ProjectedPoints)
+PP = PP[:,:,0]
+sz = np.shape(PP)
+VeiwedPoint  = np.zeros((shapeIm[2],3))
+
+TrueViewPosition =  markerMotion - droneMotion
+
+for i in range(0, shapeIm[2]):
+    mtx = np.matrix([[0., 0., 1],[0., 1, 0],[-1.0, 0., 0]])
+    mtx2 = np.matrix([[1, 0, 0],[0., -1, 0],[0, 0., 1]])
+    ang1 = np.deg2rad(ang1_set)
+    ang2 = np.deg2rad(ang2_set)
+    yAdj = np.matrix([[np.cos(ang1), 0, np.sin(ang1)],[0., 1., 0],[-np.sin(ang1), 0., np.cos(ang1)]])
+    zAdj = np.matrix([[np.cos(ang2), -np.sin(ang2), 0],[np.sin(ang2), np.cos(ang2),0.],[0.,0.,1.]])
+
+    MTX = yAdj @ zAdj @ mtx2 @ mtx  
+    temp =  DCM @ MTX  @ (np.asmatrix(PP[i,:])).transpose() 
+
+    VeiwedPoint [i,:] =   (temp.transpose() / np.linalg.norm(temp)) 
+
+error = VeiwedPoint[start:end,:] - normalize(TrueViewPosition[start:end,:])
+
+
+sqError = np.sqrt(np.linalg.norm(error, axis=1))
+
+#angular error
+CamView = cartesian_to_spherical( VeiwedPoint[start:end,0], VeiwedPoint[start:end,1],VeiwedPoint[start:end,2])
+LatCam = CamView[1][:].value
+LonCam = CamView[2][:].value
+
+
+TrueView = cartesian_to_spherical( TrueViewPosition[start:end,0], TrueViewPosition[start:end,1],TrueViewPosition[start:end,2])
+LatTrueView = TrueView[1][:].value
+LonTrueView= TrueView[2][:].value
+LatError = reject_outliers(LatCam - LatTrueView, m = 3.)
+Latmu, Latstd = norm.fit(LatError)
+
+print(Latmu)
+
+LonError = reject_outliers(LonCam - LonTrueView, m = 3.)
+Lonmu, Lonstd = norm.fit(LonError)
+
+ax.plot3D(VeiwedPoint[:,0],VeiwedPoint[:,1],VeiwedPoint[:,2])
 #PixelTransform #y = 244, x = 324
 ax2.plot( DotLocation[start:end,1], DotLocation[start:end,0])
-ax2.plot(P_pix0[:,1], P_pix0[:,0])
-ax2.plot(P_pix1[:,1], P_pix1[:,0],'g--')
 ax2.plot(P_pix2[:,1], P_pix2[:,0],'r--')
 ax2.set_xlim([0,324])
 ax2.set_ylim([0,244])
 
 ax2.invert_yaxis()
+
+
+
+ax3[0].hist((LatError),density=False, bins=40 )
+#ax3[0].set_xlim((-0.05,0.05))
+ax3[1].hist((LonError),density=False, bins=40 )
+#ax3[1].set_xlim((-0.05,0.05))
+#ax3[2].hist(error[:,2],density=True, bins=25 )
+#ax3[2].set_xlim((-0.05,0.05))
+
+normViewed = VeiwedPoint
+normView = normalize(TrueViewPosition)
+
+ax4[0].plot(TimeVect[start:end],normViewed[start:end,0])
+ax4[1].plot(TimeVect[start:end],normViewed[start:end,1])
+ax4[2].plot(TimeVect[start:end],normViewed[start:end,2])
+
+ax4[0].plot(TimeVect[start:end],normView[start:end,0])
+ax4[1].plot(TimeVect[start:end],normView[start:end,1])
+ax4[2].plot(TimeVect[start:end],normView[start:end,2])
+
 plt.show()
 
 # for i in range(0,shapeIm[2]):
