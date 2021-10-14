@@ -125,7 +125,7 @@ class FrameViewer(Gtk.Window):
             
             self.state_flag = 0
         #print(meanVal )
-        cv2.imshow('frame', gray_img)
+        #cv2.imshow('frame', gray_img)
 
     def _stateFlipFlop(self):
         img_white = 100*np.ones((1000,1000))
@@ -170,7 +170,7 @@ class FrameViewer(Gtk.Window):
             
             
             GLib.idle_add(self._update_image, pix)
-            GLib.idle_add(self._stateFlipFlop)
+            #GLib.idle_add(self._stateFlipFlop)
         except gi.repository.GLib.Error:
             print("Could not set image!")
 
